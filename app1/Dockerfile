@@ -2,15 +2,14 @@ FROM node:14
 
 WORKDIR /app
 
-RUN ls
-RUN pwd
-# COPY package*.json ./
 
-# RUN npm install
+COPY package*.json .
 
-# COPY . .
+RUN npm install
 
-# EXPOSE 3001
+COPY . .
 
-# CMD ["node", "index.js"]
+EXPOSE 3001
+
+CMD ["node", "index.js"]
 
