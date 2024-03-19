@@ -3,7 +3,7 @@ FROM node:14
 WORKDIR /app
 
 RUN ls
-
+RUN pwd
 # COPY package*.json ./
 
 # RUN npm install
