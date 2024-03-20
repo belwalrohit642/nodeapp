@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-nginxapp1
+  labels:
+    app: app1-nginx
+  annotations:
+    alb.ingress.kubernetes.io/load-balancer-name: app1ingressrules
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip    
+spec:
+  ingressClassName: alb
+  defaultBackend:
+    service:
+      name: nginx-statefulset-service
+      port:
+        number: 80    

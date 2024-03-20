@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app2-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app2
+  template:
+    metadata:
+      labels:
+        app: app2
+    spec:
+      containers:
+      - name: app2
+        image: belwalrohit642/kaniko-app2:79
+        ports:
+        - containerPort: 3000
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app2-service
+spec:
+  selector:
+    app: app2
+  ports:
+    - protocol: TCP
+      port: 80  # Port on the host machine
+      targetPort: 3000  # Port in the container
+
+
