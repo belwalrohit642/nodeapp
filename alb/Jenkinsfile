@@ -1,0 +1,124 @@
+
+pipeline {
+  agent {
+    kubernetes {
+      label 'Kaniko-Volume'
+      yaml """
+kind: Pod
+metadata:
+  name: kaniko
+spec:
+  containers:
+  - name: jnlp
+    workingDir: /home/jenkins
+  - name: kaniko
+    workingDir: /home/jenkins
+    image: gcr.io/kaniko-project/executor:debug
+    imagePullPolicy: Always
+    command:
+    - /busybox/cat
+    tty: true
+    volumeMounts:
+      - name: jenkins-docker-cfg
+        mountPath: /kaniko/.docker
+  - name: kubectl
+    image: belwalrohit642/custom-image-kubectl:v1
+    command:
+      - "/bin/bash"
+      - "-c"
+      - "sleep 99d"
+  volumes:
+  - name: jenkins-docker-cfg
+    projected:
+      sources:
+      - secret:
+          name: docker-credentials
+          items:
+            - key: .dockerconfigjson
+              path: config.json
+"""
+    }
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[credentialsId: 'gitCred', url: 'https://github.com/belwalrohit642/nodeapp.git']])
+      }
+    }
+    stage('Build with Kaniko App1') {
+      environment {
+        DOCKER_TAG = "belwalrohit642/kaniko:${BUILD_NUMBER}"
+        PATH = "/busybox:/kaniko-app1:$PATH"
+      }
+      steps {
+        container(name: 'kaniko', shell: '/busybox/sh') {
+    
+          sh '''#!/busybox/sh
+            /kaniko/executor --context `pwd`/app1 --verbosity debug --dockerfile Dockerfile --destination "${DOCKER_TAG}"
+          '''
+        }
+      }
+    }
+    stage('Build with Kaniko App2') {
+      environment {
+        DOCKER_TAG = "belwalrohit642/kaniko-app2:${BUILD_NUMBER}"
+        PATH = "/busybox:/kaniko:$PATH"
+      }
+      steps {
+        container(name: 'kaniko', shell: '/busybox/sh') {
+
+          sh '''#!/busybox/sh
+            /kaniko/executor --context `pwd`/app2 --verbosity debug --dockerfile Dockerfile --destination "${DOCKER_TAG}"
+          '''
+        }
+      }
+    }
+    stage('Build NGINX with Kaniko') {
+      environment {
+        NGINX_DOCKER_TAG = "belwalrohit642/nginx:${BUILD_NUMBER}"
+      }
+      steps {
+        container(name: 'kaniko', shell: '/busybox/sh') {
+      
+          sh '''#!/busybox/sh
+            /kaniko/executor --context `pwd`/nginx --verbosity debug --dockerfile Dockerfile --destination "${NGINX_DOCKER_TAG}"
+          '''
+        }
+      }
+    }
+    stage('Deploy on EKS') {
+      steps {
+        container (name:'kubectl', shell: '/bin/bash' ) {
+    withCredentials([file(credentialsId: 'KUBECONFIGFILE', variable: 'KUBECONFIG'),
+       usernamePassword(credentialsId: 'AWS_CREDENTIALS_ID', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                 
+                      sh '''
+                        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+                        unzip awscliv2.zip
+                        ./aws/install
+                        aws --version
+                        aws eks --region us-east-1 update-kubeconfig --name eksdemo1
+                        aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+                        aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+                    '''            
+          sh "mkdir -p ~/.kube"
+          sh "touch ~/.kube/config"
+          sh "echo $KUBECONFIG > ~/.kube/config" 
+               sh '''
+                    sed -i "s|image: belwalrohit642/kaniko:.*|image: belwalrohit642/kaniko:${BUILD_NUMBER}|" alb/app1-deploy-svc.yaml
+                    sed -i "s|image: belwalrohit642/kaniko-app2:.*|image: belwalrohit642/kaniko-app2:${BUILD_NUMBER}|" alb/app2-deploy-svc.yaml
+                    sed -i "s|image: belwalrohit642/nginx:.*|image: belwalrohit642/nginx:${BUILD_NUMBER}|" alb/nginx-deploy-svc.yaml
+                '''
+                
+                sh '''
+                    kubectl apply -f alb/app1-deploy-svc.yaml
+                    kubectl apply -f alb/app2-deploy-svc.yaml
+                    kubectl apply -f alb/nginx-deploy-svc.yaml
+                    kubectl apply -f alb/ingress.yaml
+                '''
+          }
+        }
+      }
+    }
+  }
+}
